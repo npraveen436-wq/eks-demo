@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         AWS_REGION    = 'us-east-1'
-        ECR_REGISTRY  = '<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com'
+        ECR_REGISTRY  = '416806138376.dkr.ecr.us-east-1.amazonaws.com'
         IMAGE_NAME    = 'eks-demo'
         EKS_CLUSTER   = 'eks-lab'
         BUILD_VERSION = "1.0.${BUILD_NUMBER}"
