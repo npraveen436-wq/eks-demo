@@ -1,12 +1,16 @@
 package com.demo;
 
-import com.sun.net.httpserver.HttpServer;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.URI;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+@SpringBootApplication
+@RestController
 public class App {
+
+    // Plain method kept so the existing unit tests still work unchanged.
     public String greet(String name) {
         if (name == null || name.isBlank()) {
             return "Hello, stranger";
@@ -14,36 +18,19 @@ public class App {
         return "Hello, " + name;
     }
 
-    public static void main(String[] args) throws IOException {
-        App app = new App();
-        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+    // GET /greet?name=Alice  ->  "Hello, Alice"
+    @GetMapping("/greet")
+    public String greetEndpoint(@RequestParam(name = "name", required = false) String name) {
+        return greet(name);
+    }
 
-        server.createContext("/greet", exchange -> {
-            URI uri = exchange.getRequestURI();
-            String query = uri.getQuery();
-            String name = null;
-            if (query != null && query.startsWith("name=")) {
-                name = query.substring(5);
-            }
-            String response = app.greet(name) + "\n";
-            byte[] bytes = response.getBytes();
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        });
+    // GET /health  ->  "OK"  (used by the k8s liveness/readiness probes and smoke test)
+    @GetMapping("/health")
+    public String health() {
+        return "OK";
+    }
 
-        server.createContext("/health", exchange -> {
-            String response = "OK";
-            byte[] bytes = response.getBytes();
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        });
-
-        server.setExecutor(null);
-        System.out.println("Server starting on port 8080");
-        server.start();
+    public static void main(String[] args) {
+        SpringApplication.run(App.class, args);
     }
 }

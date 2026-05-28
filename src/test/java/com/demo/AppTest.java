@@ -1,9 +1,10 @@
 package com.demo;
 
-import org.junit.Test;
-import static org.junit.Assert.*;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class AppTest {
+
     @Test
     public void testGreetWithName() {
         assertEquals("Hello, Alice", new App().greet("Alice"));
