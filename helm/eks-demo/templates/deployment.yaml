@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}
+        # ---- Datadog Unified Service Tagging ----
+        tags.datadoghq.com/env: {{ .Values.datadog.env | quote }}
+        tags.datadoghq.com/service: {{ .Release.Name | quote }}
+        tags.datadoghq.com/version: {{ .Values.image.tag | quote }}
     spec:
       containers:
         - name: {{ .Chart.Name }}
@@ -20,6 +24,28 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.service.targetPort }}
+          env:
+            # Send traces to the Datadog node Agent running on this pod's host (port 8126)
+            - name: DD_AGENT_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            # Unified Service Tagging - correlates metrics, traces, and logs
+            - name: DD_ENV
+              value: {{ .Values.datadog.env | quote }}
+            - name: DD_SERVICE
+              value: {{ .Release.Name | quote }}
+            - name: DD_VERSION
+              value: {{ .Values.image.tag | quote }}
+            # Inject trace IDs into application logs for log<->trace correlation
+            - name: DD_LOGS_INJECTION
+              value: "true"
+            # Sample 100% of traces (fine for a lab; lower in high-traffic prod)
+            - name: DD_TRACE_SAMPLE_RATE
+              value: "1"
+            # Continuous profiler - flip to "true" to also get CPU/memory profiling
+            - name: DD_PROFILING_ENABLED
+              value: "false"
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
