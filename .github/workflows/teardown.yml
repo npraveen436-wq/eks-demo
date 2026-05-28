@@ -1,0 +1,94 @@
+name: Teardown EKS deployment
+
+# Manual only - never runs on push. Removes the Helm release and the LoadBalancer/ELB.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm teardown'
+        required: true
+        default: ''
+
+env:
+  AWS_REGION:  us-east-1
+  EKS_CLUSTER: eks-lab
+  RELEASE:     eks-demo
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard - require confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "destroy" ]; then
+            echo "Confirmation not given (expected 'destroy'). Aborting."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER"
+
+      - name: Capture ELB name before deletion
+        id: elb
+        run: |
+          # The Service hostname looks like: <elbname>-1234567890.us-east-1.elb.amazonaws.com
+          HOST=$(kubectl get svc "$RELEASE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          NAME=""
+          if [ -n "$HOST" ]; then
+            NAME=$(echo "$HOST" | cut -d'-' -f1)
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Detected ELB name: '${NAME:-<none>}'"
+
+      - name: Helm uninstall
+        run: |
+          if helm status "$RELEASE" >/dev/null 2>&1; then
+            helm uninstall "$RELEASE" --wait --timeout 5m
+            echo "Helm release '$RELEASE' removed."
+          else
+            echo "No Helm release '$RELEASE' found - nothing to uninstall."
+          fi
+
+      # Deleting the LoadBalancer Service normally makes AWS delete the ELB automatically.
+      # This step verifies it's gone and force-deletes any orphan that lingers.
+      - name: Verify / clean up ELB
+        run: |
+          NAME="${{ steps.elb.outputs.name }}"
+          if [ -z "$NAME" ]; then
+            echo "No ELB name captured - skipping ELB cleanup."
+            exit 0
+          fi
+
+          echo "Waiting for classic ELB '$NAME' to be removed..."
+          for i in $(seq 1 18); do   # up to ~3 minutes
+            if ! aws elb describe-load-balancers --load-balancer-names "$NAME" >/dev/null 2>&1; then
+              echo "ELB '$NAME' is gone."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "ELB '$NAME' still present - force deleting."
+          aws elb delete-load-balancer --load-balancer-name "$NAME" || true
+          echo "Delete requested for '$NAME'."
+
+      - name: Done
+        run: echo "Teardown complete."
